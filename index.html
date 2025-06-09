@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Calculs de corrections d'indices d'égouttage</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4FC3F7">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #f9f9f9; margin: 0; padding: 0; }
+    .container { max-width: 420px; margin: 25px auto; background: #fff; border-radius: 10px; box-shadow: 0 0 10px #bbb; padding: 22px; }
+    h2 { text-align: center; color: #28415e; }
+    .logo { text-align:center; margin-bottom:10px; }
+    label { display: block; margin-top: 18px; font-size: 1.1em; }
+    input { width: 100%; padding: 10px; margin-top: 6px; border-radius: 6px; border: 1px solid #bbb; font-size: 1em; }
+    button { width: 100%; margin-top: 18px; padding: 12px; font-size: 1.1em; background: #28415e; color: #fff; border: none; border-radius: 7px; cursor: pointer; }
+    button:hover { background: #1e3146; }
+    .result { margin-top: 28px; background: #e1f5e3; padding: 18px; border-radius: 8px; font-size: 1.15em; color: #205c2f; }
+    .error { margin-top: 28px; background: #ffe3e3; padding: 18px; border-radius: 8px; color: #991d1d; }
+    .warning { margin-top: 18px; background: #fffbe6; color: #a67c00; padding: 13px; border-radius: 8px; border: 1px solid #ffe066; font-size: 1em; }
+    .save-section { margin-top: 18px; background: #f0f4fd; padding: 15px; border-radius: 8px; }
+    .save-section label { display: inline-block; margin-top: 0; margin-right: 7px; font-size: 1em;}
+    .saved-list { margin-top: 16px; background: #efefef; padding: 10px 10px 2px 10px; border-radius: 7px; }
+    .saved-item { margin-bottom: 6px; padding-bottom: 5px; border-bottom: 1px solid #ddd; font-size: 0.97em; }
+    .saved-item:last-child { border-bottom: none; }
+    .saved-title { font-weight: bold; color: #28415e; margin-bottom: 8px; }
+    .clear-btn { margin-top: 0; background: #e53935; }
+    .clear-btn:hover { background: #b71c1c; }
+    .view-btn { margin-bottom: 0; background: #1976D2; }
+    .view-btn:hover { background: #0d47a1; }
+    .close-list-btn { margin-top: 5px; background: #aaa; }
+    .close-list-btn:hover { background: #666; }
+    @media (max-width: 500px) {
+      .container { margin: 0; border-radius: 0; box-shadow: none; }
+    }
+    .nom-options { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 7px; }
+    .nom-options label { margin-right: 9px; margin-bottom: 3px; font-size: 0.97em;}
+    .nom-options input[type="radio"] { margin-right: 3px;}
+    #chartModal {
+      position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center;
+      z-index: 1000; display: none;
+    }
+    #chartBox {
+      background: #fff; border-radius: 13px; padding: 20px 16px;
+      box-shadow: 0 8px 30px #2227; max-width: 98vw; max-height: 90vh;
+      min-width: 300px;
+      overflow: auto;
+      text-align: center;
+    }
+    #closeChartBtn {
+      background: #e53935; color: #fff; margin-bottom: 10px; width: 100%;
+      border-radius: 8px; border: none; padding: 7px; font-size: 1.05em; cursor: pointer;
+    }
+    #closeChartBtn:hover { background: #b71c1c; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">
+      <!-- Logo : goutte d'eau stylisée -->
+      <svg width="60" height="72" viewBox="0 0 60 72" fill="none">
+        <path d="M30 8 Q47 38 30 64 Q13 38 30 8Z" fill="#4FC3F7" stroke="#1976D2" stroke-width="3"/>
+        <ellipse cx="30" cy="48" rx="16" ry="18" fill="#B3E5FC" opacity="0.7"/>
+        <ellipse cx="24" cy="32" rx="3" ry="5" fill="#fff" opacity="0.6"/>
+      </svg>
+    </div>
+    <h2>Calculs de corrections d'indices d'égouttage</h2>
+    <form id="egoutForm" autocomplete="off">
+      <label for="indice">Indice d'égouttage mesuré</label>
+      <input type="number" id="indice" name="indice" min="0" step="1" required>
+
+      <label for="concentration">Concentration testée (%)</label>
+      <input type="text" id="concentration" name="concentration" placeholder="Ex: 0.27 ou 270" required>
+
+      <label for="temperature">Température (°C)</label>
+      <input type="number" id="temperature" name="temperature" min="10" max="30" step="1" required>
+
+      <button type="submit">Calculer le résultat corrigé</button>
+    </form>
+    <button id="viewSavedBtn" class="view-btn" type="button" style="margin-bottom:13px;">Voir les derniers résultats</button>
+    <div id="output"></div>
+    <div id="savedList" style="display:none;"></div>
+  </div>
+  <!-- Modal pour la courbe -->
+  <div id="chartModal">
+    <div id="chartBox">
+      <button id="closeChartBtn">Fermer la courbe</button>
+      <canvas id="chartCanvas" width="350" height="240"></canvas>
+    </div>
+  </div>
+  <script>
+    // Noms disponibles
+    const nomsDisponibles = [
+      "MCP", "Latence C", "Accepté tamis prim (P2)", "Accepté tamis secondaires", "Accepté Tamis Rejet (400)",
+      "Alimentation Tamis Sec", "RBC1", "RBC2", "RBC3", "P1", "P3", "P4", "S1", "S2", "S3", "S4", "RR1", "RR2", "RR3",
+      "SOD1", "SOD2", "SOD3", "SOD4", "Headbox", "Machine Chest"
+    ];
+
+    // Calcul démo (remplace par tes propres tableaux/corrections métier)
+    function arrondi5Superieur(val) { return Math.ceil(val / 5) * 5; }
+    function parseConcentration(input) {
+      let value = input.replace(',', '.').trim();
+      let num = parseFloat(value);
+      if (isNaN(num)) return null;
+      if (num < 1) return num.toFixed(2);
+      if (num >= 1 && num <= 999) return (Math.round(num) / 1000).toFixed(2);
+      return null;
+    }
+
+    function saveResult(nom, valeur, details) {
+      let liste = JSON.parse(localStorage.getItem('egoutResults') || "[]");
+      liste.unshift({
+        nom: nom,
+        valeur: valeur,
+        details: details,
+        timestamp: Date.now()
+      });
+      // On limite à 35 résultats stockés max
+      if (liste.length > 35) liste = liste.slice(0, 35);
+      localStorage.setItem('egoutResults', JSON.stringify(liste));
+    }
+
+    function getSavedResults() {
+      return JSON.parse(localStorage.getItem('egoutResults') || "[]");
+    }
+
+    function clearSavedResults() {
+      localStorage.removeItem('egoutResults');
+    }
+
+    function formatDate(ts) {
+      const d = new Date(ts);
+      return d.toLocaleString('fr-FR', { year: '2-digit', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    // Affiche la liste des derniers résultats sauvegardés
+    function showSavedList() {
+      const div = document.getElementById('savedList');
+      const results = getSavedResults();
+      div.innerHTML = `<div class="saved-title">Derniers résultats enregistrés</div>`;
+      if (!results.length) {
+        div.innerHTML += `<div style="color:#991d1d;margin:10px 0;">Aucun résultat enregistré.</div>`;
+      } else {
+        div.innerHTML += '<div class="saved-list">' + results.map((item, idx) =>
+          `<div class="saved-item">
+            <span style="color:#1976D2;"><b>${item.nom}</b></span> — <span>${item.valeur}</span>
+            <br><span style="color:#555;">${formatDate(item.timestamp)}</span>
+            <button type="button" style="width:auto;padding:2px 8px; margin:2px 0 0 0; font-size:0.97em; background:#2e7d32;" onclick="showChartForName('${encodeURIComponent(item.nom)}')">Voir la courbe</button>
+            <div style="font-size:0.93em;color:#444;">${item.details}</div>
+          </div>`
+        ).join('') + '</div>';
+      }
+      div.innerHTML += `<button class="clear-btn" onclick="clearListAndRefresh()">Effacer les résultats</button>
+                        <button class="close-list-btn" onclick="closeSavedList()">Fermer</button>`;
+      div.style.display = "block";
+    }
+
+    window.clearListAndRefresh = function() {
+      if(confirm("Effacer tous les résultats enregistrés ?")) {
+        clearSavedResults();
+        showSavedList();
+      }
+    }
+    window.closeSavedList = function() {
+      document.getElementById('savedList').style.display = "none";
+    }
+
+    document.getElementById('viewSavedBtn').onclick = function() {
+      showSavedList();
+    };
+
+    document.getElementById('egoutForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const out = document.getElementById('output');
+      out.innerHTML = "";
+      const indice = parseInt(document.getElementById('indice').value, 10);
+      const concentrationInput = document.getElementById('concentration').value;
+      const temperature = parseInt(document.getElementById('temperature').value, 10);
+      const concentration = parseConcentration(concentrationInput);
+
+      let warning = "";
+      if (concentration !== null && (parseFloat(concentration) < 0.26 || parseFloat(concentration) > 0.34)) {
+        warning += `<div class="warning">⚠️ Concentration reconnue <b>${concentration}</b> en dehors de la plage idéale (0.26 à 0.34).</div>`;
+      }
+      if (temperature < 16 || temperature > 24) {
+        warning += `<div class="warning">⚠️ Température testée <b>${temperature}°C</b> en dehors de la plage idéale (16 à 24°C).</div>`;
+      }
+
+      if (concentration === null) {
+        out.innerHTML = warning + `<div class="error">Concentration invalide. Exemples valides : 0.27, 270, 0,29, 293</div>`;
+        return;
+      }
+
+      // Démo calcul (remplace par tes vraies règles/tableaux si tu veux)
+      let corr1 = (parseFloat(concentration) >= 0.30) ? 10 : -10;
+      let indiceCorrige = indice + corr1;
+      let indiceArrondi = arrondi5Superieur(indiceCorrige);
+      let corr2 = (temperature < 20) ? 3 : -3;
+      let resultatFinal = indiceArrondi + corr2;
+      let details = `
+        <ul>
+          <li>Indice mesuré : <b>${indice}</b></li>
+          <li>Concentration reconnue : <b>${concentration}</b></li>
+          <li>Correction concentration (démo) : ${corr1 > 0 ? "+" : ""}${corr1} ⇒ <b>${indiceCorrige}</b></li>
+          <li>Arrondi au 5 supérieur : <b>${indiceArrondi}</b></li>
+          <li>Correction température (démo) : ${corr2 > 0 ? "+" : ""}${corr2}</li>
+        </ul>`;
+
+      // Section de sauvegarde
+      let nomsHtml = nomsDisponibles.map((n, i) =>
+        `<label><input type="radio" name="nomResultat" value="${n}" ${i===0?'checked':''}>${n}</label>`
+      ).join('');
+      let saveSection = `
+      <div class="save-section">
+        <div style="margin-bottom:7px;">Associer ce résultat à un nom :</div>
+        <div class="nom-options">${nomsHtml}</div>
+        <button id="saveResultBtn" type="button" style="margin-top:10px;">Enregistrer ce résultat</button>
+      </div>`;
+
+      out.innerHTML = warning + `
+        <div class="result">
+          <strong>Résultat final corrigé&nbsp;:</strong> <span style="font-size:1.2em;">${resultatFinal}</span>
+          <small>${details}</small>
+        </div>
+        ${saveSection}
+      `;
+
+      document.getElementById('saveResultBtn').onclick = function() {
+        let nom = out.querySelector('input[name="nomResultat"]:checked');
+        if (!nom) {
+          alert('Veuillez choisir un nom pour enregistrer le résultat.');
+          return;
+        }
+        saveResult(nom.value, resultatFinal, details);
+        out.innerHTML += `<div style="color:green;margin-top:8px;">Résultat enregistré sous <b>${nom.value}</b>.</div>`;
+      };
+    });
+
+    // Chart Modal logic
+    let chartInstance = null;
+    function showChartForName(encodedNom) {
+      const nom = decodeURIComponent(encodedNom);
+      const all = getSavedResults().filter(item => item.nom === nom);
+      if (!all.length) {
+        alert("Aucune donnée pour ce nom.");
+        return;
+      }
+      // Trie par date croissante
+      all.sort((a,b) => a.timestamp - b.timestamp);
+
+      // Prépare données
+      const labels = all.map(item => formatDate(item.timestamp));
+      const values = all.map(item => Number(item.valeur));
+
+      const modal = document.getElementById('chartModal');
+      const ctx = document.getElementById('chartCanvas').getContext('2d');
+
+      // Détruit l'ancien graphe si besoin
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: `Progression "${nom}"`,
+            data: values,
+            borderColor: '#1976D2',
+            backgroundColor: 'rgba(33,150,243,0.12)',
+            pointBackgroundColor: '#1976D2',
+            pointRadius: 4,
+            borderWidth: 2,
+            tension: 0.25,
+            fill: true
+          }]
+        },
+        options: {
+          responsive: false,
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: `Historique pour "${nom}"`, color: '#1976D2', font: { size: 17, weight: 'bold' } }
+          },
+          scales: {
+            x: { title: { display: true, text: "Date/heure", color: "#444", font: { size: 13 } }, ticks: { color: "#444", font: { size: 11 } }, },
+            y: { title: { display: true, text: "Résultat", color: "#444", font: { size: 13 } }, ticks: { color: "#444", font: { size: 12 } }, }
+          }
+        }
+      });
+
+      modal.style.display = "flex";
+    }
+
+    window.showChartForName = showChartForName;
+
+    document.getElementById('closeChartBtn').onclick = function() {
+      document.getElementById('chartModal').style.display = "none";
+    };
+    document.getElementById('chartModal').onclick = function(e) {
+      if (e.target === this) this.style.display = "none";
+    };
+  </script>
+</body>
+</html>
